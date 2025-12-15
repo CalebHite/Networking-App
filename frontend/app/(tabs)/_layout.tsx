@@ -159,24 +159,31 @@ export default function TabLayout() {
   }
 
   return (
-    <UserContext.Provider value={user}>
-      <Tabs screenOptions={tabBarOptions}>
-        <Tabs.Screen
-          name="index"
-          options={{
-            title: 'Home',
-            tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="explore"
-          options={{
-            title: 'Explore',
-            tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
-          }}
-        />
-      </Tabs>
-    </UserContext.Provider>
+      <UserContext.Provider value={user}>
+        <Tabs screenOptions={tabBarOptions}>
+          <Tabs.Screen
+            name="index"
+            options={{
+              title: 'Home',
+              tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="camera"
+            options={{
+              title: 'Camera',
+              tabBarIcon: ({ color }) => <IconSymbol size={28} name="camera.fill" color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="people"
+            options={{
+              title: 'People',
+              tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.2.fill" color={color} />,
+            }}
+          />
+        </Tabs>
+      </UserContext.Provider>
   );
 }
 
