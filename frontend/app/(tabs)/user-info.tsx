@@ -15,7 +15,6 @@ export function UserInfoContent({ heading }: UserInfoContentProps) {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>{headingText}</Text>
-      <Text style={styles.subheading}>Here is the shape of your authenticated user:</Text>
       <View style={styles.card}>
         <Text selectable style={styles.body}>
           {JSON.stringify(user ?? { message: 'No user data' }, null, 2)}

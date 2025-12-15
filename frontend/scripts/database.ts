@@ -5,6 +5,25 @@ type QueryValue = string | number | boolean | undefined | null;
 type JsonResponse<T = unknown> = T;
 type JsonRequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
 
+export type EventRecord = {
+  _id?: string;
+  id?: string;
+  name?: string;
+  coverImage?: string;
+  date?: string;
+  tasks?: string[];
+};
+
+export type TaskRecord = {
+  _id?: string;
+  id?: string;
+  info?: string;
+  type?: string;
+  status?: string;
+  dateTime?: string;
+  eventId?: string;
+};
+
 const defaultHeaders: HeadersInit = {
   'Content-Type': 'application/json',
 };
@@ -162,9 +181,15 @@ export const deleteTask = (payload: {
 
 export const addConnection = (payload: {
   username: string;
-  connectionId: string;
+  connectionName: string;
+  note: string;
+  email?: string;
+  phoneNumber?: string | number;
 }) =>
-  post<{ success: boolean; error?: string }>('/add-connection', payload);
+  post<{ success: boolean; connection?: Record<string, unknown>; error?: string }>(
+    '/add-connection',
+    payload
+  );
 
 export const removeConnection = (payload: {
   username: string;
@@ -176,7 +201,11 @@ export const logout = () =>
   get<{ success: boolean; error?: string }>('/logout');
 
 export const getEvents = (username: string) =>
-  get<{ success: boolean; events?: unknown[]; error?: string }>('/get-events', {
+  get<{
+    success: boolean;
+    events?: EventRecord[];
+    error?: string;
+  }>('/get-events', {
     username,
   });
 
@@ -187,8 +216,19 @@ export const getEvent = (username: string, eventId: string) =>
   );
 
 export const getUserTasks = (username: string) =>
-  get<{ success: boolean; tasks?: unknown[]; error?: string }>('/get-user-tasks', {
+  get<{
+    success: boolean;
+    tasks?: TaskRecord[];
+    error?: string;
+  }>('/get-user-tasks', {
     username,
+  });
+
+export const getFinishedTasks = (username: string) =>
+  getUserTasks(username).then(({ tasks }) => {
+    const filteredTasks = tasks ?? [];
+    const completedTasks = filteredTasks.filter((task) => task.status === 'completed');
+    return { success: true, tasks: completedTasks };
   });
 
 export const getTask = (taskId: string) =>
