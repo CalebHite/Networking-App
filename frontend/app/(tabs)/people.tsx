@@ -35,10 +35,8 @@ export default function PeopleScreen() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  console.log(user);
   const username =
     typeof user?.username === 'string' ? user.username : '';
-  console.log(username);
   const [modalVisible, setModalVisible] = useState(false);
   const [connectionName, setConnectionName] = useState('');
   const [connectionNote, setConnectionNote] = useState('');

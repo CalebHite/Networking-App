@@ -1,5 +1,74 @@
-const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+import Constants from 'expo-constants';
+
+const DEFAULT_API_HOST = 'localhost';
+const DEFAULT_API_PORT = 3000;
+const LOCALHOST_ALIASES = new Set(['localhost', '127.0.0.1', '::1']);
+type UnknownRecord = Record<string, any>;
+
+const parseHostFromValue = (value?: string): string | null => {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.includes('://') ? value : `http://${value}`;
+  try {
+    const host = new URL(normalized).hostname;
+    if (host && !LOCALHOST_ALIASES.has(host)) {
+      return host;
+    }
+  } catch {
+    const [host] = value.split(':');
+    if (host && !LOCALHOST_ALIASES.has(host)) {
+      return host;
+    }
+  }
+
+  return null;
+};
+
+const getDevelopmentHostFromConstants = (): string | null => {
+  const manifest = Constants.manifest as UnknownRecord | null;
+  const manifest2Extra = (Constants.manifest2?.extra ?? {}) as UnknownRecord;
+  const expoConfig = Constants.expoConfig as UnknownRecord | null;
+  const expoConfigExtra = (expoConfig?.extra ?? {}) as UnknownRecord;
+  const expoGoConfig = Constants.expoGoConfig as UnknownRecord | null;
+  const platform = Constants.platform as UnknownRecord | null;
+
+  const candidates = [
+    manifest?.debuggerHost,
+    manifest?.hostUri,
+    manifest?.packagerOpts?.serverHost,
+    expoGoConfig?.debuggerHost,
+    expoConfig?.hostUri,
+    platform?.hostUri,
+    manifest2Extra?.expoGo?.debuggerHost,
+    manifest2Extra?.expoClient?.hostUri,
+    expoConfigExtra?.expoGo?.debuggerHost,
+    expoConfigExtra?.expoClient?.hostUri,
+  ];
+
+  for (const candidate of candidates) {
+    const host = parseHostFromValue(candidate);
+    if (host) {
+      return host;
+    }
+  }
+
+  return null;
+};
+
+const resolveApiBaseUrl = () => {
+  const configuredUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
+  if (configuredUrl) {
+    return configuredUrl;
+  }
+
+  const developmentHost = getDevelopmentHostFromConstants();
+  const baseHost = developmentHost ?? DEFAULT_API_HOST;
+  return `http://${baseHost}:${DEFAULT_API_PORT}`;
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
 
 type QueryValue = string | number | boolean | undefined | null;
 type JsonResponse<T = unknown> = T;
@@ -60,6 +129,7 @@ async function request<T = unknown>(
   path: string,
   { body, headers, ...initProps }: JsonRequestOptions = {}
 ): Promise<JsonResponse<T>> {
+  console.log('API_BASE_URL', API_BASE_URL);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...initProps,
     headers: {

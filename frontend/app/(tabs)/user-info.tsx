@@ -1,43 +1,39 @@
 import { useContext } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 
 import { UserContext } from './user-context';
 
 type UserInfoContentProps = {
   heading?: string;
+  style?: StyleProp<ViewStyle>;
+  cardStyle?: StyleProp<ViewStyle>;
 };
 
-export function UserInfoContent({ heading }: UserInfoContentProps) {
+export function UserInfoContent({ heading, style, cardStyle }: UserInfoContentProps) {
   const user = useContext(UserContext);
   const headingText =
     heading ?? (user?.username ? `Welcome back, ${user.username}!` : 'Welcome!');
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <View style={[styles.container, style]}>
       <Text style={styles.heading}>{headingText}</Text>
-      <View style={styles.card}>
+      <View style={[styles.card, cardStyle]}>
         <Text selectable style={styles.body}>
           {JSON.stringify(user ?? { message: 'No user data' }, null, 2)}
         </Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
-    padding: 24,
-    gap: 16,
-    backgroundColor: '#f7f7f7',
+    gap: 14,
   },
   heading: {
-    fontSize: 26,
-    fontWeight: 'bold',
-  },
-  subheading: {
-    fontSize: 16,
-    color: '#555',
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1f1f1f',
   },
   card: {
     backgroundColor: '#fff',
@@ -45,10 +41,15 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#ddd',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
   body: {
     fontFamily: 'monospace',
     lineHeight: 20,
+    color: '#2c2c2c',
   },
 });
 
