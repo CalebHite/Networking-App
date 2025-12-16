@@ -44,24 +44,28 @@ export default function CameraScreen() {
 
     try {
       // Add the connection
+      console.log('Calling addConnection for:', linkedInUsername);
       const connectionResponse = await addConnection({
         username,
         connectionName: linkedInUsername,
         note: `LinkedIn connection\nLinkedIn URL: ${linkedInUrl}`,
       });
 
+      console.log('Connection response:', JSON.stringify(connectionResponse));
+
       if (!connectionResponse.success) {
         throw new Error(connectionResponse.error || 'Failed to add connection');
       }
 
       // Create a task with type "Connect"
+      console.log('About to call createTask for:', linkedInUsername);
       const taskResponse = await createTask({
         username,
         info: `Connect with ${linkedInUsername} on LinkedIn: ${linkedInUrl}`,
         type: 'Connect',
       });
 
-      console.log('Task response:', taskResponse);
+      console.log('TaskResponse:', JSON.stringify(taskResponse));
 
       if (!taskResponse.success) {
         throw new Error(taskResponse.error || 'Failed to create task');
