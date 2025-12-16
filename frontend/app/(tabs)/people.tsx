@@ -4,34 +4,51 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { addConnection, getConnections } from '@/scripts/database';
 import { UserContext } from './user-context';
 
 type Connection = Record<string, unknown>;
 
-const formatConnectionValue = (value: unknown) => {
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return 'None';
-    }
-    return value.join(', ');
-  }
-  if (value === null || value === undefined) {
-    return 'None';
-  }
-  return String(value);
+const UI = {
+  bg: '#0B0B0F',
+  card: '#1A1A21',
+  border: '#26262E',
+  text: '#FFFFFF',
+  sub: '#A0A0AA',
+  magenta: '#FF2AD4',
+};
+
+const getConnectionName = (connection: Connection) => {
+  const candidates = [
+    connection.connectionName,
+    connection.name,
+    connection.username,
+    connection.id,
+    connection._id,
+  ];
+  const first = candidates.find((v) => typeof v === 'string' && v.trim().length > 0);
+  return (first as string | undefined) ?? 'Connection';
+};
+
+const getConnectionSubtitle = (connection: Connection) => {
+  const raw =
+    (typeof connection.note === 'string' ? connection.note : undefined) ??
+    (typeof connection.description === 'string' ? connection.description : undefined) ??
+    '';
+  const cleaned = raw.replace(/\s+/g, ' ').trim();
+  return cleaned.length > 0 ? cleaned : 'Tap + to add notes';
 };
 
 export default function PeopleScreen() {
   const user = useContext(UserContext);
+  const insets = useSafeAreaInsets();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,8 +57,6 @@ export default function PeopleScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const [connectionName, setConnectionName] = useState('');
   const [connectionNote, setConnectionNote] = useState('');
-  const [connectionEmail, setConnectionEmail] = useState('');
-  const [connectionPhone, setConnectionPhone] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmittingConnection, setIsSubmittingConnection] = useState(false);
 
@@ -73,8 +88,6 @@ export default function PeopleScreen() {
   const resetConnectionForm = useCallback(() => {
     setConnectionName('');
     setConnectionNote('');
-    setConnectionEmail('');
-    setConnectionPhone('');
   }, []);
 
   const handleDismissModal = useCallback(() => {
@@ -105,8 +118,6 @@ export default function PeopleScreen() {
         username,
         connectionName: trimmedName,
         note: trimmedNote,
-        email: connectionEmail ? connectionEmail.trim() : undefined,
-        phoneNumber: connectionPhone ? connectionPhone.trim() : undefined,
       });
       handleDismissModal();
       loadConnections();
@@ -121,8 +132,6 @@ export default function PeopleScreen() {
     username,
     connectionName,
     connectionNote,
-    connectionEmail,
-    connectionPhone,
     loadConnections,
     handleDismissModal,
   ]);
@@ -137,37 +146,43 @@ export default function PeopleScreen() {
     [loading, error]
   );
 
-  const renderConnection = ({ item }: { item: Connection }) => {
-    const entries = Object.entries(item ?? {}).sort(([leftKey], [rightKey]) =>
-      leftKey.localeCompare(rightKey)
-    );
-
-    return (
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          {formatConnectionValue(item.username ?? item.id ?? item._id ?? 'Connection')}
+  const renderConnection = ({ item }: { item: Connection }) => (
+    <View style={styles.row}>
+      <View style={styles.avatar} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {getConnectionName(item)}
         </Text>
-        <ScrollView style={styles.cardContent} nestedScrollEnabled>
-          {entries.map(([key, value]) => (
-            <View key={key} style={styles.cardRow}>
-              <Text style={styles.cardKey}>{key}</Text>
-              <Text style={styles.cardValue}>{formatConnectionValue(value)}</Text>
-            </View>
-          ))}
-        </ScrollView>
+        <Text style={styles.rowSub} numberOfLines={1}>
+          {getConnectionSubtitle(item)}
+        </Text>
       </View>
-    );
-  };
+      <View style={styles.rowRight}>
+        <View style={styles.miniIcon} />
+        <View style={[styles.miniIcon, { opacity: 0.65 }]} />
+      </View>
+    </View>
+  );
 
   const keyExtractor = (connection: Connection, index: number) =>
     `${connection.id ?? connection._id ?? connection.username ?? index}`;
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Connections</Text>
+    <View style={[styles.container, { paddingTop: insets.top + 16 }]}>
+      <View style={styles.header}>
+        <Text style={styles.heading}>People</Text>
+        <Pressable
+          onPress={() => setModalVisible(true)}
+          style={styles.addButton}
+          accessibilityLabel="Add a connection"
+        >
+          <Text style={styles.addButtonText}>+</Text>
+        </Pressable>
+      </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading ? (
-        <ActivityIndicator color="#2f95dc" size="large" style={styles.loader} />
+        <ActivityIndicator color={UI.sub} size="large" style={styles.loader} />
       ) : null}
       <FlatList
         data={connections}
@@ -181,13 +196,6 @@ export default function PeopleScreen() {
           <Text style={styles.emptyText}>{noConnectionsMessage}</Text>
         )}
       />
-      <TouchableOpacity
-        style={styles.floatingButton}
-        onPress={() => setModalVisible(true)}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.floatingButtonText}>+</Text>
-      </TouchableOpacity>
       <Modal
         transparent
         visible={modalVisible}
@@ -209,7 +217,7 @@ export default function PeopleScreen() {
               value={connectionName}
               onChangeText={setConnectionName}
               autoCapitalize="words"
-              placeholderTextColor="#888"
+              placeholderTextColor={UI.sub}
             />
             <TextInput
               style={[styles.input, styles.inputMultiline]}
@@ -218,24 +226,7 @@ export default function PeopleScreen() {
               onChangeText={setConnectionNote}
               multiline
               numberOfLines={4}
-              placeholderTextColor="#888"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Email (optional)"
-              value={connectionEmail}
-              onChangeText={setConnectionEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholderTextColor="#888"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Phone (optional)"
-              value={connectionPhone}
-              onChangeText={setConnectionPhone}
-              keyboardType="phone-pad"
-              placeholderTextColor="#888"
+              placeholderTextColor={UI.sub}
             />
             <View style={styles.modalActions}>
               <Pressable
@@ -270,13 +261,35 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     paddingBottom: 96,
-    backgroundColor: '#fafafa',
+    backgroundColor: UI.bg,
     position: 'relative',
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
   heading: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: '800',
+    color: UI.text,
+  },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: UI.card,
+    borderWidth: 1,
+    borderColor: UI.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addButtonText: {
+    color: UI.text,
+    fontSize: 26,
+    lineHeight: 28,
+    fontWeight: '700',
   },
   loader: {
     marginVertical: 16,
@@ -291,7 +304,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#555',
+    color: UI.sub,
     textAlign: 'center',
   },
   error: {
@@ -299,64 +312,48 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '600',
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    padding: 12,
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  cardContent: {
-    maxHeight: 200,
-  },
-  cardRow: {
+  row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  cardKey: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333',
-    flex: 1,
-  },
-  cardValue: {
-    fontSize: 14,
-    color: '#555',
-    flex: 1,
-    textAlign: 'right',
-  },
-  floatingButton: {
-    position: 'absolute',
-    right: 24,
-    bottom: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#2f95dc',
     alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    backgroundColor: UI.card,
+    borderWidth: 1,
+    borderColor: UI.border,
+    borderRadius: 18,
+    marginBottom: 10,
   },
-  floatingButtonText: {
-    fontSize: 32,
-    color: '#fff',
-    lineHeight: 34,
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: UI.magenta,
+    opacity: 0.9,
+  },
+  rowTitle: {
+    color: UI.text,
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  rowSub: {
+    color: UI.sub,
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  rowRight: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  miniIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
   },
   modalBackdrop: {
     flex: 1,
@@ -367,7 +364,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     borderRadius: 16,
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: UI.card,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -378,10 +375,11 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 4,
+    color: UI.text,
   },
   modalDescription: {
     fontSize: 14,
-    color: '#555',
+    color: UI.sub,
     marginBottom: 12,
   },
   modalError: {
@@ -390,13 +388,14 @@ const styles = StyleSheet.create({
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: UI.border,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
-    backgroundColor: '#fafafa',
+    backgroundColor: UI.card,
     fontSize: 14,
+    color: UI.text,
   },
   inputMultiline: {
     minHeight: 80,
@@ -414,14 +413,14 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   modalButtonPrimary: {
-    backgroundColor: '#2f95dc',
+    backgroundColor: '#6D2CF5',
   },
   modalButtonSecondary: {
-    backgroundColor: '#e0e0e0',
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   modalButtonText: {
     fontWeight: '600',
-    color: '#1f1f1f',
+    color: UI.text,
   },
   modalButtonPrimaryText: {
     color: '#fff',

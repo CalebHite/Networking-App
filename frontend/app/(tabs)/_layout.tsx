@@ -4,13 +4,12 @@ import { Button, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { login, register } from '@/scripts/database';
 import { User, UserContext } from './user-context';
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  useColorScheme();
   const [user, setUser] = useState<User | null>(null);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -91,13 +90,14 @@ export default function TabLayout() {
     <View
       style={[
         styles.container,
-        { backgroundColor: Colors[colorScheme ?? 'light'].background },
+        { backgroundColor: '#0B0B0F' },
       ]}>
-      <Text style={styles.heading}>Sign in to continue</Text>
+      <Text style={styles.heading}>Sign in</Text>
       <TextInput
         value={username}
         onChangeText={setUsername}
         placeholder="Username"
+        placeholderTextColor="#6E6E78"
         style={styles.input}
         autoCapitalize="none"
         autoCorrect={false}
@@ -107,6 +107,7 @@ export default function TabLayout() {
         onChangeText={setPassword}
         placeholder="Password"
         secureTextEntry
+        placeholderTextColor="#6E6E78"
         style={styles.input}
         editable={!loading}
       />
@@ -114,6 +115,7 @@ export default function TabLayout() {
         value={email}
         onChangeText={setEmail}
         placeholder="Email"
+        placeholderTextColor="#6E6E78"
         style={styles.input}
         autoCapitalize="none"
         keyboardType="email-address"
@@ -122,6 +124,7 @@ export default function TabLayout() {
         value={phoneNumber}
         onChangeText={setPhoneNumber}
         placeholder="Phone number"
+        placeholderTextColor="#6E6E78"
         style={styles.input}
         keyboardType="phone-pad"
       />
@@ -147,11 +150,37 @@ export default function TabLayout() {
 
   const tabBarOptions = useMemo(
     () => ({
-      tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+      tabBarActiveTintColor: '#FFFFFF',
+      tabBarInactiveTintColor: '#8D8D98',
       headerShown: false,
       tabBarButton: HapticTab,
+      tabBarStyle: {
+        position: 'absolute' as const,
+        left: 18,
+        right: 18,
+        bottom: 18,
+        height: 70,
+        paddingBottom: 10,
+        paddingTop: 10,
+        borderRadius: 999,
+        backgroundColor: '#1A1A21',
+        borderTopWidth: 0,
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
+        shadowOffset: { width: 0, height: 10 },
+        elevation: 14,
+      },
+      tabBarItemStyle: {
+        borderRadius: 999,
+        marginHorizontal: 6,
+      },
+      tabBarLabelStyle: {
+        fontSize: 12,
+        fontWeight: '600' as const,
+      },
     }),
-    [colorScheme]
+    []
   );
 
   if (!user) {
@@ -198,13 +227,15 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
+    color: '#fff',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#aaa',
-    borderRadius: 6,
+    borderColor: '#2B2B33',
+    borderRadius: 14,
     padding: 12,
-    backgroundColor: '#fff',
+    backgroundColor: '#121219',
+    color: '#fff',
   },
   error: {
     marginTop: 12,

@@ -129,7 +129,6 @@ async function request<T = unknown>(
   path: string,
   { body, headers, ...initProps }: JsonRequestOptions = {}
 ): Promise<JsonResponse<T>> {
-  console.log('API_BASE_URL', API_BASE_URL);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...initProps,
     headers: {

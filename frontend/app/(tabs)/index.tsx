@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -9,24 +9,37 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { createTask, EventRecord, getEvents } from '@/scripts/database';
+import {
+  createTask,
+  EventRecord,
+  getEvents,
+  getFinishedTasks,
+  getUserTasks,
+  updateTask,
+  TaskRecord,
+} from '@/scripts/database';
 import { UserContext } from './user-context';
-import { UserInfoContent } from './user-info';
 
 const TASK_TYPES = ['Connect', 'Meeting', 'Application', 'Other'] as const;
 type TaskType = (typeof TASK_TYPES)[number];
 
-type TaskEntry = {
-  id: string;
-  label: string;
-  type?: string;
-  eventName?: string;
+const UI = {
+  bg: '#0B0B0F',
+  card: '#14141B',
+  card2: '#1A1A21',
+  border: '#26262E',
+  text: '#FFFFFF',
+  sub: '#A0A0AA',
+  purple: '#5D2DB7',
+  magenta: '#FF2AD4',
 };
 
 export default function HomeScreen() {
   const user = useContext(UserContext);
   const username = typeof user?.username === 'string' ? user.username : undefined;
+  const insets = useSafeAreaInsets();
 
   // Events from user context (array of event IDs or event objects)
   const userEvents = Array.isArray(user?.events) ? user.events : [];
@@ -35,17 +48,20 @@ export default function HomeScreen() {
   const [fetchedEvents, setFetchedEvents] = useState<EventRecord[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
-  // Tasks state
-  const [createdTasks, setCreatedTasks] = useState<TaskEntry[]>([]);
+  const [tasks, setTasks] = useState<TaskRecord[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [finishedCount, setFinishedCount] = useState<number>(0);
 
   // Modal state
   const [modalVisible, setModalVisible] = useState(false);
   const [taskInfo, setTaskInfo] = useState('');
   const [taskType, setTaskType] = useState<TaskType>(TASK_TYPES[0]);
-  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [taskDetailsVisible, setTaskDetailsVisible] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<TaskRecord | null>(null);
+  const [isCompletingTask, setIsCompletingTask] = useState(false);
+  const [taskDetailsError, setTaskDetailsError] = useState<string | null>(null);
 
   // Load events when username changes
   useEffect(() => {
@@ -77,12 +93,41 @@ export default function HomeScreen() {
     };
   }, [username]);
 
+  const loadTasks = useCallback(async (activeUsername: string) => {
+    setLoadingTasks(true);
+    try {
+      const [tasksResponse, finishedResponse] = await Promise.all([
+        getUserTasks(activeUsername),
+        getFinishedTasks(activeUsername),
+      ]);
+      if (tasksResponse.success && Array.isArray(tasksResponse.tasks)) {
+        setTasks(tasksResponse.tasks);
+      }
+      if (finishedResponse.success && Array.isArray(finishedResponse.tasks)) {
+        setFinishedCount(finishedResponse.tasks.length);
+      }
+    } catch (err) {
+      console.warn('Failed to load tasks:', err);
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!username) {
+      setTasks([]);
+      setFinishedCount(0);
+      return;
+    }
+    loadTasks(username);
+  }, [loadTasks, username]);
+
   // Build display events: prefer fetched data, fallback to user.events
-  const events: Array<{ id: string; name: string; date?: string }> =
+  const events: { id: string; name: string; date?: string }[] =
     fetchedEvents.length > 0
       ? fetchedEvents.map((e, i) => ({
-          id: e._id || e.id,
-          name: e.name,
+          id: e._id || e.id || `event-${i}`,
+          name: e.name || `Event ${i + 1}`,
           date: e.date,
         }))
       : userEvents.map((e, i) => {
@@ -98,27 +143,63 @@ export default function HomeScreen() {
           };
         });
 
-  // Helper to get event name by ID
-  const getEventName = (eventId: string): string => {
-    const event = events.find((e) => e.id === eventId);
-    return event?.name || 'Unknown Event';
-  };
-
-  // Get selected event name for dropdown
-  const selectedEventName = selectedEventId ? getEventName(selectedEventId) : undefined;
+  const activeEvent = events[0];
 
   const handleOpenModal = () => {
     setTaskInfo('');
     setTaskType(TASK_TYPES[0]);
-    setSelectedEventId(undefined);
     setFormError(null);
-    setIsDropdownOpen(false);
     setModalVisible(true);
   };
 
   const handleCloseModal = () => {
     setModalVisible(false);
-    setIsDropdownOpen(false);
+  };
+
+  const handleOpenTaskDetails = (task: TaskRecord) => {
+    setSelectedTask(task);
+    setTaskDetailsError(null);
+    setTaskDetailsVisible(true);
+  };
+
+  const handleCloseTaskDetails = () => {
+    setTaskDetailsVisible(false);
+    setSelectedTask(null);
+    setTaskDetailsError(null);
+    setIsCompletingTask(false);
+  };
+
+  const handleCompleteSelectedTask = async () => {
+    if (!username) {
+      setTaskDetailsError('User not available');
+      return;
+    }
+    const taskId = selectedTask?._id || selectedTask?.id;
+    if (!taskId) {
+      setTaskDetailsError('Task id missing');
+      return;
+    }
+
+    setIsCompletingTask(true);
+    setTaskDetailsError(null);
+    try {
+      const response = await updateTask({
+        username,
+        taskId,
+        status: 'completed',
+      });
+      if (!response.success) {
+        setTaskDetailsError(response.error || 'Failed to complete task');
+        return;
+      }
+
+      await loadTasks(username);
+      handleCloseTaskDetails();
+    } catch (err) {
+      setTaskDetailsError(err instanceof Error ? err.message : 'Failed to complete task');
+    } finally {
+      setIsCompletingTask(false);
+    }
   };
 
   const handleCreateTask = async () => {
@@ -141,19 +222,11 @@ export default function HomeScreen() {
         username,
         info: trimmedInfo,
         type: taskType,
-        eventId: selectedEventId,
       });
 
-      if (response.success && response.task) {
-        const task = response.task as Record<string, unknown>;
-        const newTask: TaskEntry = {
-          id: (task._id as string) || (task.id as string) || `task-${Date.now()}`,
-          label: trimmedInfo,
-          type: taskType,
-          eventName: selectedEventId ? getEventName(selectedEventId) : undefined,
-        };
-        setCreatedTasks((prev) => [newTask, ...prev]);
+      if (response.success) {
         handleCloseModal();
+        await loadTasks(username);
       } else {
         setFormError(response.error || 'Failed to create task');
       }
@@ -164,98 +237,200 @@ export default function HomeScreen() {
     }
   };
 
+  const integrations = useMemo(() => {
+    const raw = (user?.integrations as unknown) ?? [];
+    return Array.isArray(raw) ? raw : [];
+  }, [user?.integrations]);
+
+  const connectionCount = useMemo(() => {
+    const raw = (user?.connections as unknown) ?? [];
+    return Array.isArray(raw) ? raw.length : 0;
+  }, [user?.connections]);
+
+  const pendingTasks = useMemo(
+    () => (tasks ?? []).filter((t) => t.status !== 'completed'),
+    [tasks]
+  );
+
+  const formatMaybeDateTime = (value?: string) => {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleString();
+  };
+
   return (
     <ScrollView
-      contentContainerStyle={styles.screen}
+      style={{ backgroundColor: UI.bg }}
+      contentContainerStyle={[styles.screen, { paddingTop: insets.top + 18 }]}
       showsVerticalScrollIndicator={false}
     >
-      {/* User Info Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>User info</Text>
-          <Text style={styles.sectionSubtitle}>Personalized snapshot</Text>
+      <View style={styles.profileCard}>
+        <Text style={styles.profileTitle}>
+          {typeof user?.username === 'string' && user.username.trim().length > 0
+            ? 'Hey, '+user.username+'!'
+            : 'Your Profile'}
+        </Text>
+
+        <View style={styles.profileStatsRow}>
+          <View style={styles.statPill}>
+            <Text style={styles.statNumber}>{connectionCount}</Text>
+            <Text style={styles.statLabel}>Connections</Text>
+          </View>
+          <View style={styles.statPill}>
+            <Text style={styles.statNumber}>{finishedCount}</Text>
+            <Text style={styles.statLabel}>Finished Tasks</Text>
+          </View>
         </View>
-        <UserInfoContent style={styles.userCard} />
+
+        <Text style={styles.integrationsLabel}>Integrations</Text>
+        <View style={styles.dotsRow}>
+          {(integrations.length > 0 ? integrations.slice(0, 5) : new Array(5).fill(null)).map(
+            (_, idx) => (
+              <View
+                key={idx}
+                style={[
+                  styles.dot,
+                  { backgroundColor: idx % 2 === 0 ? UI.magenta : '#7A3CFF' },
+                ]}
+              />
+            )
+          )}
+        </View>
       </View>
 
-      {/* Events Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Recent events</Text>
-          <Text style={styles.sectionSubtitle}>
-            {loadingEvents
-              ? 'Loading...'
-              : events.length > 0
-              ? `${events.length} tracked`
-              : 'No events yet'}
+      <View style={styles.sectionHeaderRow}>
+        <Text style={styles.sectionTitle}>Recent Events</Text>
+      </View>
+      {loadingEvents ? (
+        <ActivityIndicator color={UI.sub} style={{ marginVertical: 14 }} />
+      ) : !activeEvent ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>No events yet.</Text>
+        </View>
+      ) : (
+        <View style={styles.eventHero}>
+          <View style={styles.eventHeroTopRow}>
+            <Text style={styles.eventHeroTitle} numberOfLines={1}>
+              {activeEvent.name}
+            </Text>
+            <View style={styles.eventPlay}>
+              <Text style={styles.eventPlayText}>{'▶'}</Text>
+            </View>
+          </View>
+          <Text style={styles.eventHeroSub}>
+            {activeEvent.date ? `On ${new Date(activeEvent.date).toLocaleDateString()}` : ' '}
           </Text>
         </View>
-        {loadingEvents ? (
-          <ActivityIndicator style={{ marginVertical: 20 }} />
-        ) : events.length === 0 ? (
-          <View style={styles.placeholderCard}>
-            <Text style={styles.placeholderText}>
-              No events yet — create one to get started.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.eventList}>
-            {events.map((event, index) => (
-              <View key={event.id} style={styles.eventCard}>
-                <Text style={styles.eventName}>{event.name}</Text>
-                {event.date && (
-                  <Text style={styles.eventDate}>
-                    {new Date(event.date).toLocaleDateString()}
-                  </Text>
-                )}
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
+      )}
 
-      {/* Tasks Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionTitle}>Pending tasks</Text>
-            <Text style={styles.sectionSubtitle}>
-              {createdTasks.length > 0
-                ? `${createdTasks.length} recorded`
-                : 'All caught up'}
-            </Text>
-          </View>
-          <Pressable
-            onPress={handleOpenModal}
-            style={styles.addTaskButton}
-            accessibilityLabel="Add a task"
-          >
-            <Text style={styles.addTaskButtonText}>+</Text>
-          </Pressable>
-        </View>
-        {createdTasks.length === 0 ? (
-          <View style={styles.placeholderCard}>
-            <Text style={styles.placeholderText}>
-              No tasks yet — add one with the button above.
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.taskList}>
-            {createdTasks.map((task, index) => (
-              <View key={task.id} style={styles.taskCard}>
-                <Text style={styles.taskTitle}>{`Task ${index + 1}`}</Text>
-                <Text style={styles.taskMeta}>{task.label}</Text>
-                {task.type && (
-                  <Text style={styles.taskDetail}>Type: {task.type}</Text>
-                )}
-                {task.eventName && (
-                  <Text style={styles.taskDetail}>Event: {task.eventName}</Text>
-                )}
-              </View>
-            ))}
-          </View>
-        )}
+      <View style={[styles.sectionHeaderRow, { marginTop: 18 }]}>
+        <Text style={styles.sectionTitle}>Tasks</Text>
+        <Pressable
+          onPress={handleOpenModal}
+          style={styles.addButton}
+          accessibilityLabel="Add a task"
+        >
+          <Text style={styles.addButtonText}>+</Text>
+        </Pressable>
       </View>
+      {loadingTasks ? (
+        <ActivityIndicator color={UI.sub} style={{ marginVertical: 14 }} />
+      ) : pendingTasks.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>All caught up.</Text>
+        </View>
+      ) : (
+        <View style={styles.taskList}>
+          {pendingTasks.slice(0, 6).map((task) => (
+            <Pressable
+              key={(task._id || task.id || task.info || '') as string}
+              style={({ pressed }) => [styles.taskRow, pressed ? styles.taskRowPressed : null]}
+              onPress={() => handleOpenTaskDetails(task)}
+              accessibilityRole="button"
+              accessibilityLabel="View task details"
+            >
+              <View style={styles.taskBullet} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.taskRowTitle} numberOfLines={1}>
+                  {task.info || 'Task'}
+                </Text>
+                <Text style={styles.taskRowSub} numberOfLines={1}>
+                  {(task.type ? `${task.type} • ` : '') +
+                    (task.dateTime ? new Date(task.dateTime).toLocaleString() : '')}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
+      {/* Task Details Modal */}
+      <Modal
+        transparent
+        visible={taskDetailsVisible}
+        animationType="fade"
+        onRequestClose={handleCloseTaskDetails}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={handleCloseTaskDetails}>
+          <Pressable style={styles.detailsModalContainer} onPress={() => null}>
+            <Text style={styles.modalTitle}>Task details</Text>
+            {taskDetailsError ? (
+              <Text style={styles.modalError}>{taskDetailsError}</Text>
+            ) : null}
+
+            <View style={styles.detailsMetaRow}>
+              <Text style={styles.detailsMetaLabel}>Type</Text>
+              <Text style={styles.detailsMetaValue}>{selectedTask?.type || '—'}</Text>
+            </View>
+            <View style={styles.detailsMetaRow}>
+              <Text style={styles.detailsMetaLabel}>Status</Text>
+              <Text style={styles.detailsMetaValue}>{selectedTask?.status || 'pending'}</Text>
+            </View>
+            <View style={styles.detailsMetaRow}>
+              <Text style={styles.detailsMetaLabel}>Date</Text>
+              <Text style={styles.detailsMetaValue}>
+                {formatMaybeDateTime(selectedTask?.dateTime)}
+              </Text>
+            </View>
+            <View style={styles.detailsMetaRow}>
+              <Text style={styles.detailsMetaLabel}>ID</Text>
+              <Text selectable style={styles.detailsMetaValue}>
+                {selectedTask?._id || selectedTask?.id || '—'}
+              </Text>
+            </View>
+
+            <Text style={[styles.modalLabel, { marginTop: 12 }]}>Details</Text>
+            <View style={styles.detailsBody}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text selectable style={styles.detailsBodyText}>
+                  {selectedTask?.info || '—'}
+                </Text>
+              </ScrollView>
+            </View>
+
+            <View style={styles.modalActions}>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonSecondary]}
+                onPress={handleCompleteSelectedTask}
+                disabled={isCompletingTask}
+              >
+                {isCompletingTask ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalButtonText}>Complete</Text>
+                )}
+              </Pressable>
+              <Pressable
+                style={[styles.modalButton, styles.modalButtonPrimary]}
+                onPress={handleCloseTaskDetails}
+              >
+                <Text style={[styles.modalButtonText, styles.modalButtonPrimaryText]}>Close</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* Create Task Modal */}
       <Modal
@@ -274,7 +449,7 @@ export default function HomeScreen() {
               multiline
               numberOfLines={4}
               placeholder="Describe the task"
-              placeholderTextColor="#888"
+              placeholderTextColor={UI.sub}
               value={taskInfo}
               onChangeText={setTaskInfo}
               textAlignVertical="top"
@@ -302,62 +477,6 @@ export default function HomeScreen() {
                 </Pressable>
               ))}
             </View>
-
-            <Text style={styles.modalLabel}>Event</Text>
-            <Pressable
-              onPress={() => setIsDropdownOpen(!isDropdownOpen)}
-              style={[
-                styles.dropdownButton,
-                isDropdownOpen && styles.dropdownButtonActive,
-              ]}
-            >
-              <Text style={styles.dropdownButtonText}>
-                {selectedEventName || 'None'}
-              </Text>
-            </Pressable>
-
-            {isDropdownOpen && (
-              <View style={styles.dropdownList}>
-                <Pressable
-                  onPress={() => {
-                    setSelectedEventId(undefined);
-                    setIsDropdownOpen(false);
-                  }}
-                  style={styles.dropdownOption}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownOptionText,
-                      selectedEventId === undefined && styles.dropdownOptionTextActive,
-                    ]}
-                  >
-                    None
-                  </Text>
-                </Pressable>
-                {events.map((event) => {
-                  const eventId = event.id || '';
-                  return (
-                    <Pressable
-                      key={eventId}
-                      onPress={() => {
-                        setSelectedEventId(eventId);
-                        setIsDropdownOpen(false);
-                      }}
-                      style={styles.dropdownOption}
-                    >
-                      <Text
-                        style={[
-                          styles.dropdownOptionText,
-                          eventId === selectedEventId && styles.dropdownOptionTextActive,
-                        ]}
-                      >
-                        {event.name || 'Unnamed Event'}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
 
             <View style={styles.modalActions}>
               <Pressable
@@ -389,121 +508,182 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   screen: {
-    padding: 16,
-    backgroundColor: '#f4f4f6',
-    paddingBottom: 32,
+    flexGrow: 1,
+    padding: 18,
+    paddingBottom: 120,
+    backgroundColor: UI.bg,
   },
-  section: {
-    marginBottom: 24,
+  profileCard: {
+    backgroundColor: UI.purple,
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
   },
-  sectionHeader: {
+  profileTitle: {
+    color: UI.text,
+    fontSize: 26,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  profileStatsRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 14,
+  },
+  statPill: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  statNumber: {
+    color: UI.text,
+    fontSize: 20,
+    fontWeight: '800',
+    lineHeight: 22,
+  },
+  statLabel: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  integrationsLabel: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  dotsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  dot: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  sectionHeaderRow: {
+    marginTop: 18,
+    marginBottom: 10,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111',
+    fontSize: 18,
+    fontWeight: '800',
+    color: UI.text,
   },
-  sectionSubtitle: {
-    fontSize: 13,
-    color: '#6c6c6c',
+  eventHero: {
+    backgroundColor: UI.card2,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: UI.border,
   },
-  userCard: {
-    backgroundColor: '#fff',
-  },
-  eventList: {
+  eventHeroTopRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: 12,
   },
-  eventCard: {
-    width: 220,
-    padding: 16,
-    borderRadius: 16,
-    backgroundColor: '#fff',
-    marginRight: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+  eventHeroTitle: {
+    flex: 1,
+    color: UI.text,
+    fontSize: 18,
+    fontWeight: '800',
   },
-  eventName: {
-    fontSize: 17,
+  eventHeroSub: {
+    color: UI.sub,
+    marginTop: 10,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
-    color: '#1c1c1c',
   },
-  eventDate: {
-    fontSize: 14,
-    color: '#4b4b4b',
-  },
-  placeholderCard: {
-    padding: 16,
-    borderRadius: 14,
-    backgroundColor: '#fff',
+  eventPlay: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderWidth: 1,
-    borderColor: '#e5e5e5',
+    borderColor: 'rgba(255,255,255,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  placeholderText: {
-    color: '#6a6a6a',
+  eventPlayText: {
+    color: UI.text,
     fontSize: 14,
+    fontWeight: '900',
+    marginLeft: 2,
+  },
+  addButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: UI.card2,
+    borderWidth: 1,
+    borderColor: UI.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addButtonText: {
+    color: UI.text,
+    fontSize: 26,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
+  emptyCard: {
+    backgroundColor: UI.card2,
+    borderWidth: 1,
+    borderColor: UI.border,
+    borderRadius: 18,
+    padding: 16,
+  },
+  emptyText: {
+    color: UI.sub,
+    fontSize: 14,
+    fontWeight: '600',
   },
   taskList: {
     flexDirection: 'column',
   },
-  taskCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e3e3e3',
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    borderLeftWidth: 4,
-    borderLeftColor: '#2f95dc',
-    marginBottom: 12,
-  },
-  taskTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1b1b1b',
-  },
-  taskMeta: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#4b4b4b',
-  },
-  taskDetail: {
-    marginTop: 4,
-    fontSize: 12,
-    color: '#5a5a5a',
-  },
-  addTaskButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#2f95dc',
+  taskRow: {
+    flexDirection: 'row',
+    gap: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    backgroundColor: UI.card2,
+    borderWidth: 1,
+    borderColor: UI.border,
+    borderRadius: 18,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 10,
   },
-  addTaskButtonText: {
-    color: '#fff',
-    fontSize: 28,
-    lineHeight: 32,
+  taskRowPressed: {
+    opacity: 0.85,
+  },
+  taskBullet: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: UI.magenta,
+  },
+  taskRowTitle: {
+    color: UI.text,
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  taskRowSub: {
+    color: UI.sub,
+    fontSize: 12,
     fontWeight: '600',
+    marginTop: 4,
   },
   modalBackdrop: {
     flex: 1,
@@ -514,17 +694,27 @@ const styles = StyleSheet.create({
   modalContainer: {
     borderRadius: 18,
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: UI.card,
     elevation: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
   },
+  detailsModalContainer: {
+    borderRadius: 18,
+    padding: 20,
+    backgroundColor: UI.card,
+    borderWidth: 1,
+    borderColor: UI.border,
+    width: '100%',
+    maxHeight: 520,
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: '700',
     marginBottom: 12,
+    color: UI.text,
   },
   modalError: {
     color: '#b00020',
@@ -535,17 +725,53 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 4,
-    color: '#333',
+    color: UI.sub,
+  },
+  detailsMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  detailsMetaLabel: {
+    color: UI.sub,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  detailsMetaValue: {
+    color: UI.text,
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 12,
+    flexShrink: 1,
+    textAlign: 'right',
+  },
+  detailsBody: {
+    backgroundColor: UI.card2,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: UI.border,
+    padding: 12,
+    maxHeight: 180,
+  },
+  detailsBodyText: {
+    color: UI.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: UI.border,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    backgroundColor: '#fafafa',
+    backgroundColor: UI.card2,
     fontSize: 14,
     marginBottom: 12,
+    color: UI.text,
   },
   inputMultiline: {
     minHeight: 90,
@@ -558,65 +784,25 @@ const styles = StyleSheet.create({
   },
   typeOption: {
     borderWidth: 1,
-    borderColor: '#cfcfcf',
+    borderColor: UI.border,
     borderRadius: 10,
     paddingVertical: 6,
     paddingHorizontal: 12,
-    backgroundColor: '#fff',
+    backgroundColor: UI.card2,
     marginRight: 8,
     marginBottom: 8,
   },
   typeOptionSelected: {
-    borderColor: '#2f95dc',
-    backgroundColor: '#e6f0ff',
+    borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   typeOptionText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#555',
+    color: UI.sub,
   },
   typeOptionTextSelected: {
-    color: '#2f95dc',
-  },
-  dropdownButton: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: '#fff',
-    marginBottom: 6,
-  },
-  dropdownButtonActive: {
-    borderColor: '#2f95dc',
-    backgroundColor: '#f2f7ff',
-  },
-  dropdownButtonDisabled: {
-    opacity: 0.5,
-  },
-  dropdownButtonText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  dropdownList: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 10,
-    maxHeight: 160,
-    backgroundColor: '#fff',
-    marginBottom: 12,
-  },
-  dropdownOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  dropdownOptionText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  dropdownOptionTextActive: {
-    color: '#2f95dc',
-    fontWeight: '600',
+    color: UI.text,
   },
   modalActions: {
     flexDirection: 'row',
@@ -630,15 +816,15 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   modalButtonSecondary: {
-    backgroundColor: '#e0e0e0',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   modalButtonPrimary: {
-    backgroundColor: '#2f95dc',
+    backgroundColor: UI.purple,
   },
   modalButtonText: {
     fontWeight: '600',
     fontSize: 14,
-    color: '#1f1f1f',
+    color: UI.text,
   },
   modalButtonPrimaryText: {
     color: '#fff',

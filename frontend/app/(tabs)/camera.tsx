@@ -44,39 +44,30 @@ export default function CameraScreen() {
 
     try {
       // Add the connection
-      console.log('Calling addConnection for:', linkedInUsername);
       const connectionResponse = await addConnection({
         username,
         connectionName: linkedInUsername,
         note: `LinkedIn connection\nLinkedIn URL: ${linkedInUrl}`,
       });
 
-      console.log('Connection response:', JSON.stringify(connectionResponse));
-
       if (!connectionResponse.success) {
         throw new Error(connectionResponse.error || 'Failed to add connection');
       }
 
       // Create a task with type "Connect"
-      console.log('About to call createTask for:', linkedInUsername);
       const taskResponse = await createTask({
         username,
         info: `Connect with ${linkedInUsername} on LinkedIn: ${linkedInUrl}`,
         type: 'Connect',
       });
 
-      console.log('TaskResponse:', JSON.stringify(taskResponse));
-
       if (!taskResponse.success) {
         throw new Error(taskResponse.error || 'Failed to create task');
       }
 
-      console.log('LinkedIn connection added:', linkedInUsername);
-      console.log('Connect task created for:', linkedInUsername);
       setStatusMessage(`Added ${linkedInUsername} as a connection!`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to add connection';
-      console.error('Error adding LinkedIn connection:', message);
       setStatusMessage(`Error: ${message}`);
     }
   };
@@ -86,12 +77,10 @@ export default function CameraScreen() {
     setScanned(true);
     
     const url = result.data;
-    console.log('QR Code URL:', url);
 
     // Check if it's a LinkedIn QR code
     const linkedInUsername = extractLinkedInUsername(url);
     if (linkedInUsername) {
-      console.log('LinkedIn profile detected:', linkedInUsername);
       await handleLinkedInQR(url, linkedInUsername);
     } else {
       setStatusMessage('QR Code scanned (not a LinkedIn profile)');
@@ -105,15 +94,17 @@ export default function CameraScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <CameraView
-        style={styles.camera}
-        facing="back"
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr'],
-        }}
-        onBarcodeScanned={handleBarcodeScanned}
-      />
+    <View style={styles.container} >
+      <View style={styles.previewShell}>
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+          onBarcodeScanned={handleBarcodeScanned}
+        />
+      </View>
       {statusMessage && (
         <View style={styles.overlay}>
           <Text style={styles.scannedText}>{statusMessage}</Text>
@@ -126,12 +117,25 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#0B0B0F',
+    padding: 18,
+    paddingBottom: 120,
+    paddingTop: 80,
     justifyContent: 'center',
   },
   message: {
     textAlign: 'center',
     paddingBottom: 10,
     paddingHorizontal: 20,
+    color: '#fff',
+  },
+  previewShell: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 22,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#26262E',
   },
   camera: {
     flex: 1,
